@@ -170,6 +170,7 @@ class WebSession(object):
                 return True
             else:
                 logger.info("LogOUT")
+                logger.info(resp.url)
                 return False
         else:
             logger.info('Bad args for login')

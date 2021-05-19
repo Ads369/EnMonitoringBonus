@@ -53,7 +53,7 @@ def clear_html_string(in_str):
     return in_str
 
 
-def get_answer_from_page(soup_pa=None, df_ob=None):
+def get_answer_from_page(soup_pa=None, df_ob=None, is_page_of_main_codes=True):
     """
     Transform EN-page of stats to table
     :param soup_pa: (BS object) page of EN
@@ -76,31 +76,52 @@ def get_answer_from_page(soup_pa=None, df_ob=None):
         logger.info('stats found')
 
     # Drop page to blocks
-    for l, t, c, a, d in zip(td[0::5], td[1::5], td[2::5], td[3::5], td[4::5]):
-        l = clear_html_string(l.text)  # Number of level
-        t = clear_html_string(t.text)  # Team and User
-        u = clear_html_string(t[t.find("(") + 1:t.find(")")])  # User
-        t = clear_html_string(t[:t.find('(') - 1])  # Team
-        c = clear_html_string(c.text)  # Is correct answer
-        a = clear_html_string(a.text)  # Answer
-        d = clear_html_string(d.text)  # Date of answer
+    if is_page_of_main_codes:
+        for l, t, c, a, d in zip(td[0::5], td[1::5], td[2::5], td[3::5], td[4::5]):
+            l = clear_html_string(l.text)  # Number of level
+            t = clear_html_string(t.text)  # Team and User
+            u = clear_html_string(t[t.find("(") + 1:t.find(")")])  # User
+            t = clear_html_string(t[:t.find('(') - 1])  # Team
+            c = clear_html_string(c.text)  # Is correct answer
+            a = clear_html_string(a.text)  # Answer
+            d = clear_html_string(d.text)  # Date of answer
 
-        # print('{}-{}-{}-{}'.format(l,t,a,d))
+            # print('{}-{}-{}-{}'.format(l,t,a,d))
 
-        df_ob = df_ob.append({'Level': l,
-                              'Team': t,
-                              'User': u,
-                              'IsCorrect': c,
-                              'Answer': a,
-                              'Date': d},
-                             ignore_index=True)
+            df_ob = df_ob.append({'Level': l,
+                                  'Team': t,
+                                  'User': u,
+                                  'IsCorrect': c,
+                                  'Answer': a,
+                                  'Date': d},
+                                 ignore_index=True)
+    else:
+        for l, t, c, a, d in zip(td[0::6], td[2::6], td[3::6], td[4::6], td[5::6]):
+            l = clear_html_string(l.text)  # Number of level
+            t = clear_html_string(t.text)  # Team and User
+            u = clear_html_string(t[t.find("(") + 1:t.find(")")])  # User
+            t = clear_html_string(t[:t.find('(') - 1])  # Team
+            c = clear_html_string(c.text)  # Is correct answer
+            a = clear_html_string(a.text)  # Answer
+            d = clear_html_string(d.text)  # Date of answer
+
+            # print('{}-{}-{}-{}'.format(l,t,a,d))
+
+            df_ob = df_ob.append({'Level': l,
+                                  'Team': t,
+                                  'User': u,
+                                  'IsCorrect': c,
+                                  'Answer': a,
+                                  'Date': d},
+                                 ignore_index=True)
 
     return df_ob
 
 
-def handling_dataframe(df_in=None):
+def handling_dataframe(df_in=None, levels_list=None):
     team_list = df_in['Team'].unique()
-    levels_list = df_in['Level'].unique()
+    if levels_list is None:
+        levels_list = df_in['Level'].unique()
     pd.set_option('display.max_columns', 7)
     for team in team_list:
         for level in levels_list:
@@ -121,7 +142,13 @@ def login_en(game_id=None, login=None, password=None):
 def count_page(soup_in):
     # Count page of stats
     try:
-        div = soup_in.select('#ctl03_divContent > div')
+        # Depend on type of page (fullpage or only table)
+        div_1 = soup_in.select('#ctl03_divContent > div')
+        div_2 = soup_in.select('#MonitoringForm > div')
+        if len(div_1) > len(div_2):
+            div = div_1
+        else:
+            div = div_2
         count_page_list = div[0].text.replace(u'\xa0', u' ').split(' ')
         count_page = int(count_page_list[-1])
     except IndexError:
@@ -131,13 +158,18 @@ def count_page(soup_in):
 def get_monitoring():
     # Constants
     # url = "http://demo.en.cx/GameStat.aspx?type=own&gid=30415"
-    URL_monitoring = 'http://72.en.cx/Administration/Games/ActionMonitor.aspx?gid=71529'
-    game_id = '71529'
+    game_id = '71610'
+    URL_monitoring = 'http://72.en.cx/Administration/Games/ActionMonitor.aspx?' \
+                     'gid={}'.format(game_id)
+    URL_monitoring_bonus = 'http://72.en.cx/ALoader/GameLoader.aspx?' \
+                           'gid={}&item=1&rnd={}'.format(game_id, random.random())
 
     # Creating an empty Data frame with column name only
     df_object = pd.DataFrame(columns=['Level', 'Team', 'User', 'IsCorrect', 'Answer', 'Date'])
 
     en_ws = login_en()  # Login EN
+
+    # BLock main code
     # Get first page of monitor
     soup = en_ws.get_bs_from_url(url=URL_monitoring)
 
@@ -149,28 +181,57 @@ def get_monitoring():
     df_object = get_answer_from_page(soup, df_object)
     # Next pages
     if amount_page > 1:
-        for i in range(2, amount_page):
+        for i in range(2, amount_page+1):
             time.sleep(2)
             link_page = 'http://72.en.cx/Administration/Games/ActionMonitor.aspx?' \
                         'gid={}&page={}'.format(game_id, i)
-            # en_ws.get_page(url=link_page)  # Get page
-            # soup = BeautifulSoup(en_ws.resp.content, 'html.parser')
             print(link_page)
             soup = en_ws.get_bs_from_url(url=link_page)
             df_object = get_answer_from_page(soup, df_object)
 
-            # Save DataFrame to CSV
-            # df_object.to_csv('materials/monitoring.csv')
-
             print(df_object.iloc[[0, -1]])
+
+    # --
+    # BLock get bonus monitoring
+    print(URL_monitoring_bonus)
+
+    # Get first page of monitor
+    soup = en_ws.get_bs_from_url(url=URL_monitoring_bonus)
+
+    # Count page of monitoring
+    amount_page = count_page(soup)
+
+    # First page
+    df_object = get_answer_from_page(soup, df_object, is_page_of_main_codes=False)
+
+    # Next pages
+    if amount_page > 1:
+        for i in range(2, amount_page+1):
+            time.sleep(2)
+            link_page = 'http://72.en.cx/ALoader/GameLoader.aspx?' \
+                                   'gid={}&item=1&rnd={}&page={}'.format(game_id, random.random(), i)
+            print(link_page)
+            soup = en_ws.get_bs_from_url(url=link_page)
+            df_object = get_answer_from_page(soup, df_object, is_page_of_main_codes=False)
+
+    # link_page = 'http://72.en.cx/ALoader/GameLoader.aspx?' \
+    #             'gid={}&item=1&rnd={}&page={}'.format(game_id, random.random(), i)
+
 
     # Save DataFrame to CSV
     df_object.to_csv('materials/monitoring.csv')
 
+def get_monitor_bonus():
+    url_monitor_bonus = 'http://72.en.cx/ALoader/GameLoader.aspx?gid=71610&item=1&rnd=0.8948610704795616'
+    game_id = '71610'
+    pass
 
-def parsing_stats(file_path='materials/monitoring.csv'):
+
+
+
+def parsing_stats(file_path='materials/monitoring.csv', levels_list=None):
     data_frame = pd.read_csv(file_path)
-    handling_dataframe(data_frame)
+    handling_dataframe(data_frame, levels_list=levels_list)
 
 
 if __name__ == '__main__':
@@ -179,3 +240,5 @@ if __name__ == '__main__':
     game_id = '71529'
     URL_game = 'http://72.en.cx/GameDetails.aspx?gid={}'.format(game_id)
     URL_monitoring = 'http://72.en.cx/Administration/Games/ActionMonitor.aspx?gid={}'.format(game_id)
+    # get_monitoring()
+    parsing_stats(levels_list=[3])
